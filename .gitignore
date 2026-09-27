@@ -1,0 +1,10 @@
+.vscode
+__pycache__/
+renders/
+*.log
+*.bag
+*.bvh
+*.pkl
+MANO_UV_left.obj
+MANO_UV_right.obj
+*npz
