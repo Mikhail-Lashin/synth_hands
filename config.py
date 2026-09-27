@@ -1,9 +1,12 @@
-import os
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parent
 
 # hand model & texture
-ASSET_DIR = "./mano"
-OBJ_MODEL_PATH = os.path.join(ASSET_DIR, "hand.obj")
-TEXTURE_PATH = os.path.join(ASSET_DIR, "hand_texture.png")
+NPZ_PATH = PROJECT_ROOT / "handx" / "train_mano.npz"
+MANO_DIR = PROJECT_ROOT / "mano" / "originals"
+OBJ_PATH = PROJECT_ROOT / "mano" / "hand.obj"
+TEXTURE_PATH = PROJECT_ROOT / "mano" / "hand_texture.png"
 
 # camera
 CAM_POSITION = (0.0, -0.42, 0.0)

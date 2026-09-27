@@ -1,7 +1,10 @@
 import os
 import numpy as np
 from pxr import UsdGeom, UsdShade, Vt, Gf, Sdf
-from config import TEXTURE_PATH
+import torch
+import smplx
+
+from config import TEXTURE_PATH, NPZ_PATH, MANO_DIR
 
 class Hand:
     def __init__(self):
@@ -38,7 +41,6 @@ class Hand:
                     face_uv_indices.extend(f_vt)
                     
         verts = np.array(verts, dtype=np.float32)
-        verts -= np.mean(verts, axis=0) # center mesh at origin
         
         self.verts = verts
         self.uv_coords = np.array(uv_coords, dtype=np.float32)
@@ -98,3 +100,59 @@ class Hand:
         UsdShade.MaterialBindingAPI.Apply(mesh_prim.GetPrim()).Bind(self.material)
         
         self.mesh = mesh_prim
+        
+    def upd_verts(self, npz_path=NPZ_PATH, clip_idx=0, frame_idx=0, hand_type="right"):
+        data = np.load(npz_path, allow_pickle=True)
+        
+        clip = data[str(clip_idx)].item()
+        pose_frame = torch.tensor(clip[hand_type + "_pose"][frame_idx : frame_idx + 1], dtype=torch.float32)   # (1, 48)
+        shape_frame = torch.tensor(clip[hand_type + "_shape"][frame_idx : frame_idx + 1], dtype=torch.float32) # (1, 10)
+        
+        model_type = "MANO_RIGHT.pkl" if hand_type == "right" else "MANO_LEFT.pkl"
+        mano_layer = smplx.create(
+            model_path=str(MANO_DIR),
+            model_type=model_type,
+            is_rhand=True if hand_type == "right" else False,
+            use_pca=False,
+            flat_hand_mean=False
+        )
+
+        output = mano_layer(
+            hand_pose=pose_frame[:, 3:],
+            betas=shape_frame,
+        )
+
+        new_verts = output.vertices[0].detach().cpu().numpy()
+        
+        # update attr
+        self.verts = new_verts
+        
+        # update mesh
+        if self.mesh is not None:
+            self.mesh.GetPointsAttr().Set(Vt.Vec3fArray.FromNumpy(self.verts))
+            self.mesh.GetExtentAttr().Set(self.mesh.ComputeExtent(self.mesh.GetPointsAttr().Get()))
+        
+        return new_verts
+    
+    def rot_hand(self, R: np.ndarray | None = None) -> np.ndarray:
+        if self.verts is None:
+            raise ValueError("Verts arent initialised yet. Use load_obj() or upd_verts().")
+
+        if R is None:
+            R = np.array([
+                [ 0.0, 0.0, 1.0],
+                [ 0.0, 1.0, 0.0],
+                [-1.0, 0.0, 0.0]
+            ], dtype=np.float32)
+
+        assert np.isclose(np.linalg.det(R), 1.0, atol=1e-5), "Rotation matrix must have det = +1"
+
+        # update attr
+        self.verts = np.ascontiguousarray(self.verts @ R.T, dtype=np.float32)
+
+        # upd mesh
+        if self.mesh is not None:
+            self.mesh.GetPointsAttr().Set(Vt.Vec3fArray.FromNumpy(self.verts))
+            self.mesh.GetExtentAttr().Set(self.mesh.ComputeExtent(self.mesh.GetPointsAttr().Get()))
+
+        return self.verts
