@@ -25,7 +25,7 @@ import omni.usd
 import omni.replicator.core as rep
 
 import config as cfg
-from hand import Hand
+from entities import Hand
 
 def setup_render_pipeline(camera, resolution=cfg.RESOLUTION):
     render_product = rep.create.render_product(camera, resolution)

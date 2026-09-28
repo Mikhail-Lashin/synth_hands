@@ -3,6 +3,7 @@ import numpy as np
 from pxr import UsdGeom, UsdShade, Vt, Gf, Sdf
 import torch
 import smplx
+import omni.replicator.core as rep
 
 from config import TEXTURE_PATH, NPZ_PATH, MANO_DIR
 
@@ -156,3 +157,142 @@ class Hand:
             self.mesh.GetExtentAttr().Set(self.mesh.ComputeExtent(self.mesh.GetPointsAttr().Get()))
 
         return self.verts
+    
+class StereoCamera:
+    """
+    Default - Intel RealSense D405:
+        ~ baseline - 18 mm
+        ~ color camera fov - H:84 / V:58 / D:92 (degrees)
+        ~ sensor: OV9782
+    """
+    def __init__(
+        self,
+        position: tuple = (0.0, -0.28, 0.0),
+        look_at: tuple = (0.0, 0.0, 0.0),
+        resolution: tuple = (848, 480),
+        baseline: float = 0.018,
+        focal_length: float | None = None,
+        h_fov: float = 84.0,
+        v_fov: float = 58.0,
+        sensor_width: float = 3.896,           # default for OV9782 (mm)
+        sensor_height: float = 2.453,          # default for OV9782 (mm)
+        clip_range: tuple = (0.05, 2.0)
+    ):
+        self.resolution = resolution
+        self.baseline = baseline
+        self.position = np.array(position, dtype=np.float32)
+        self.look_at = np.array(look_at, dtype=np.float32)
+        self.clip_range = clip_range
+        
+        w, h = resolution
+        ratio_resolution = h / w
+        ratio_sensor = sensor_height / sensor_width
+        self.horizontal_aperture = sensor_width if ratio_resolution <= ratio_sensor else sensor_height / ratio_resolution
+        self.vertical_aperture = sensor_height if ratio_resolution >= ratio_sensor else sensor_width * ratio_resolution
+        
+        if focal_length is not None:
+            self.focal_length = focal_length
+        else:
+            self.focal_length = self.horizontal_aperture / (2.0 * np.tan(np.radians(h_fov / 2.0)))
+        
+        self.cam_left = None
+        self.cam_right = None
+        self.rp_left = None
+        self.rp_right = None
+        self.annot_rgb_left = None
+        self.annot_rgb_right = None
+        self.annot_depth_left = None
+        
+        self._init_cameras()
+        self.setup_pipeline()
+
+    def _compute_stereo_vectors(self, pos, target):
+        """Calculate orthonormal basis for left and right imagers offsets"""
+        forward = target - pos
+        forward /= np.linalg.norm(forward)
+        
+        up_world = np.array([0.0, 0.0, 1.0], dtype=np.float32)
+        if np.abs(np.dot(forward, up_world)) > 0.99:
+            up_world = np.array([0.0, 1.0, 0.0], dtype=np.float32)
+            
+        right = np.cross(forward, up_world)
+        right /= np.linalg.norm(right)
+        
+        return forward, right
+
+    def _init_cameras(self):
+        _, right = self._compute_stereo_vectors(self.position, self.look_at)
+        
+        # imagers offsets
+        half_b = (self.baseline / 2.0) * right
+        pos_left = tuple(self.position - half_b)
+        pos_right = tuple(self.position + half_b)
+        look_left = tuple(self.look_at - half_b)
+        look_right = tuple(self.look_at + half_b)
+
+        self.cam_left = rep.create.camera(
+            position=pos_left,
+            look_at=look_left,
+            focal_length=self.focal_length,
+            horizontal_aperture=self.horizontal_aperture,
+            vertical_aperture=self.vertical_aperture,
+            clipping_range=self.clip_range,
+            name="LeftCam"
+        )
+        
+        self.cam_right = rep.create.camera(
+            position=pos_right,
+            look_at=look_right,
+            focal_length=self.focal_length,
+            horizontal_aperture=self.horizontal_aperture,
+            vertical_aperture=self.vertical_aperture,
+            clipping_range=self.clip_range,
+            name="RightCam"
+        )
+
+    def setup_pipeline(self):
+        """Init render buffers & annotators (RGB + Depth)"""
+        # render products
+        self.rp_left = rep.create.render_product(self.cam_left, self.resolution)
+        self.rp_right = rep.create.render_product(self.cam_right, self.resolution)
+
+        # rgb annotators
+        self.annot_rgb_left = rep.AnnotatorRegistry.get_annotator("rgb")
+        self.annot_rgb_left.attach([self.rp_left])
+
+        self.annot_rgb_right = rep.AnnotatorRegistry.get_annotator("rgb")
+        self.annot_rgb_right.attach([self.rp_right])
+
+        # depth (only for left cam)
+        self.annot_depth_left = rep.AnnotatorRegistry.get_annotator("distance_to_camera")
+        self.annot_depth_left.attach([self.rp_left])
+
+    def render(self, num_subframes: int = 16) -> dict:
+        """Render RGB & Depth"""
+        rep.orchestrator.step(rt_subframes=num_subframes, pause_timeline=True)
+        
+        left_rgb = self.annot_rgb_left.get_data()[:, :, :3]
+        right_rgb = self.annot_rgb_right.get_data()[:, :, :3]
+        left_depth = self.annot_depth_left.get_data()
+        
+        return {
+            "left_rgb": left_rgb,
+            "right_rgb": right_rgb,
+            "left_depth": left_depth
+        }
+
+    def get_intrinsics(self) -> np.ndarray:
+        w, h = self.resolution
+        fx = (w * self.focal_length) / self.horizontal_aperture
+        fy = (h * self.focal_length) / self.vertical_aperture
+        cx = w / 2.0
+        cy = h / 2.0
+        
+        return np.array([
+            [fx,  0, cx],
+            [ 0, fy, cy],
+            [ 0,  0,  1]
+        ], dtype=np.float32)
+
+class SceneManager:
+    pass
