@@ -1,10 +1,12 @@
 .vscode
 __pycache__/
 renders/
+handx/
 *.log
 *.bag
 *.bvh
 *.pkl
 MANO_UV_left.obj
 MANO_UV_right.obj
-*npz
+*.npz
+*.jpg

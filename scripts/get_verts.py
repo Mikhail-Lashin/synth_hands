@@ -39,4 +39,4 @@ output = mano_layer(
 )
 
 verts = output.vertices[0].detach().cpu().numpy()
-print(">>> Verts:", verts.shape)
+print(">>> Verts shape:", verts.shape)

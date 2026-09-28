@@ -4,9 +4,9 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 
 # hand model & texture
 NPZ_PATH = PROJECT_ROOT / "handx" / "train_mano.npz"
-MANO_DIR = PROJECT_ROOT / "mano" / "originals"
-OBJ_PATH = PROJECT_ROOT / "mano" / "hand.obj"
-TEXTURE_PATH = PROJECT_ROOT / "mano" / "hand_texture.png"
+MANO_DIR = PROJECT_ROOT / "assets" / "mano" / "originals"
+OBJ_PATH = PROJECT_ROOT / "assets" / "mano" / "hand.obj"
+TEXTURE_PATH = PROJECT_ROOT / "assets" / "mano" / "hand_texture.png"
 
 # camera
 CAM_POSITION = (0.0, -0.42, 0.0)
