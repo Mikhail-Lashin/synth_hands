@@ -1,9 +1,13 @@
 import os
 import numpy as np
-from pxr import UsdGeom, UsdShade, Vt, Gf, Sdf
+from pxr import UsdGeom, UsdShade, Vt, Gf, Sdf, UsdLux
 import torch
 import smplx
+import random
+from pathlib import Path
+import carb
 import omni.replicator.core as rep
+import omni.usd
 
 from config import TEXTURE_PATH, NPZ_PATH, MANO_DIR
 
@@ -167,7 +171,7 @@ class StereoCamera:
     """
     def __init__(
         self,
-        position: tuple = (0.0, -0.28, 0.0),
+        position: tuple = (0.0, -0.25, 0.0),
         look_at: tuple = (0.0, 0.0, 0.0),
         resolution: tuple = (848, 480),
         baseline: float = 0.018,
@@ -225,17 +229,16 @@ class StereoCamera:
         
         # imagers offsets
         half_b = (self.baseline / 2.0) * right
-        pos_left = tuple(self.position - half_b)
-        pos_right = tuple(self.position + half_b)
-        look_left = tuple(self.look_at - half_b)
-        look_right = tuple(self.look_at + half_b)
+        pos_left = (self.position - half_b).tolist()
+        pos_right = (self.position + half_b).tolist()
+        look_left = (self.look_at - half_b).tolist()
+        look_right = (self.look_at + half_b).tolist()
 
         self.cam_left = rep.create.camera(
             position=pos_left,
             look_at=look_left,
             focal_length=self.focal_length,
             horizontal_aperture=self.horizontal_aperture,
-            vertical_aperture=self.vertical_aperture,
             clipping_range=self.clip_range,
             name="LeftCam"
         )
@@ -245,7 +248,6 @@ class StereoCamera:
             look_at=look_right,
             focal_length=self.focal_length,
             horizontal_aperture=self.horizontal_aperture,
-            vertical_aperture=self.vertical_aperture,
             clipping_range=self.clip_range,
             name="RightCam"
         )
@@ -295,4 +297,79 @@ class StereoCamera:
         ], dtype=np.float32)
 
 class SceneManager:
-    pass
+    def __init__(
+        self,
+        textures_dir: str | Path = "assets/plane_materials",
+        plane_position: tuple = (0.0, 1.1, 0.0),
+        plane_rotation: tuple = (90, 0, 0),
+        plane_scale: float = 3.5,
+        dome_intensity: float = 300.0,
+        distant_intensity: float = 700.0
+    ):
+        self.textures_dir = Path(textures_dir)
+        self.texture_files = sorted(list(self.textures_dir.glob("*_Color.jpg")))
+        
+        self._setup_render_settings()
+
+        # background plane
+        self.plane = rep.create.plane(
+            position=plane_position,
+            rotation=plane_rotation,
+            scale=plane_scale,
+            name="BackdropPlane"
+        )
+        
+        # lights
+        self.dome_light = rep.create.light(
+            light_type="dome", 
+            intensity=dome_intensity
+        )
+        self.distant_light = rep.create.light(
+            light_type="distant",
+            intensity=distant_intensity,
+            rotation=(40, 30, 0)
+        )
+
+    def _setup_render_settings(self):
+        settings = carb.settings.get_settings()
+        settings.set("/rtx/post/aa/op", 2) # anti-aliasing (0 - off, 1 - fxaa, 2 - taa)
+        settings.set("/omni/replicator/backends/disk/root_dir", os.path.abspath(".")) # root dir = project dir
+
+    def set_backdrop_texture(self, texture_path: str | Path, roughness: float = 0.85):
+        tex_abs = os.path.abspath(str(texture_path))
+        mat = rep.create.material_omnipbr(
+            diffuse_texture=tex_abs,
+            roughness=roughness
+        )
+        with self.plane:
+            rep.modify.material(mat)
+
+    def set_backdrop_by_idx(self, idx: int, roughness: float = 0.85) -> str:
+        if not self.texture_files:
+            raise FileNotFoundError(f"Textures not found at {self.textures_dir}")
+            
+        tex_file = self.texture_files[idx % len(self.texture_files)]
+        self.set_backdrop_texture(tex_file, roughness=roughness)
+        return tex_file.name
+            
+    def randomize_lighting(self):
+        # TODO: remove magic numbers
+        stage = omni.usd.get_context().get_stage()
+
+        # dome
+        dome_prim = stage.GetPrimAtPath("/Replicator/DomeLight_Xform/DomeLight")
+        if dome_prim.IsValid():
+            dome_light = UsdLux.DomeLight(dome_prim)
+            dome_light.GetIntensityAttr().Set(float(random.uniform(200.0, 450.0)))
+
+        # distant
+        distant_prim = stage.GetPrimAtPath("/Replicator/DistantLight_Xform/DistantLight")
+        distant_xform = stage.GetPrimAtPath("/Replicator/DistantLight_Xform")
+        
+        if distant_prim.IsValid():
+            distant_light = UsdLux.DistantLight(distant_prim)
+            distant_light.GetIntensityAttr().Set(float(random.uniform(500.0, 900.0)))
+
+        if distant_xform.IsValid():
+            rot = Gf.Vec3f(float(random.uniform(25.0, 75.0)), float(random.uniform(0.0, 360.0)), 0.0)
+            UsdGeom.XformCommonAPI(distant_xform).SetRotate(rot)

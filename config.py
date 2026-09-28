@@ -9,11 +9,11 @@ OBJ_PATH = PROJECT_ROOT / "assets" / "mano" / "hand.obj"
 TEXTURE_PATH = PROJECT_ROOT / "assets" / "mano" / "hand_texture.png"
 
 # camera
-CAM_POSITION = (0.0, -0.42, 0.0)
+CAM_POSITION = (0.0, -0.25, 0.0)
 CAM_LOOK_AT = (0.0, 0.0, 0.0)
 
 # render
-RESOLUTION = (1024, 1024)
+RESOLUTION = (848, 480)
 WARMUP_STEPS = 15
 RENDER_SUBFRAMES = 32
 OUTPUT_DIR = "renders"
