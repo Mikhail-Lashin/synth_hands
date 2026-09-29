@@ -1,0 +1,3 @@
+[submodule "Fast-FoundationStereo"]
+	path = libs/Fast-FoundationStereo
+	url = https://github.com/NVlabs/Fast-FoundationStereo.git
