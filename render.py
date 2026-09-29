@@ -114,13 +114,15 @@ def main():
         look_at=cfg.CAM_LOOK_AT,
         resolution=cfg.RESOLUTION
     )
+    cam_config_path = str(cfg.OUTPUT_DIR + "/cam_config.json")
+    camera.save_config(cam_config_path)
 
     # warmup
     for _ in range(cfg.WARMUP_STEPS):
         simulation_app.update()
 
     # video render
-    for texture_idx, clip_idx in enumerate(range(704, 1177)):
+    '''for texture_idx, clip_idx in enumerate(range(704, 1177)):
         scene.set_backdrop_by_idx(texture_idx)
         scene.randomize_lighting()
         simulation_app.update()
@@ -132,7 +134,7 @@ def main():
             simulation_app=simulation_app,
             num_frames=60,
             fps=30
-        )
+        )'''
 
 if __name__ == "__main__":
     main()

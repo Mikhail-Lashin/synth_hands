@@ -2,9 +2,11 @@ import os
 import numpy as np
 from pxr import UsdGeom, UsdShade, Vt, Gf, Sdf, UsdLux
 import torch
-import smplx
 import random
 from pathlib import Path
+import smplx
+import json
+
 import carb
 import omni.replicator.core as rep
 import omni.usd
@@ -295,6 +297,24 @@ class StereoCamera:
             [ 0, fy, cy],
             [ 0,  0,  1]
         ], dtype=np.float32)
+        
+    def _to_dict(self) -> dict:
+        return {
+            "resolution": list(self.resolution),
+            "baseline": float(self.baseline),
+            "position": self.position.tolist(),  # np.array -> list
+            "look_at": self.look_at.tolist(),
+            "clip_range": list(self.clip_range),
+            "horizontal_aperture": float(self.horizontal_aperture),
+            "vertical_aperture": float(self.vertical_aperture),
+            "focal_length": float(self.focal_length),
+            "intrinsics": self.get_intrinsics().tolist()
+        }
+
+    def save_config(self, filepath: str):
+        data = self._to_dict()
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=4)
 
 class SceneManager:
     def __init__(
