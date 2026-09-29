@@ -20,7 +20,7 @@ def extract_stereo_pair(video_path: str, out_dir: str = DEFAULT_OUT_DIR, frame_i
     cap.release()
     
     if not ret:
-        raise RuntimeError(f"Не удалось прочитать кадр {frame_idx} из {video_path}")
+        raise RuntimeError(f"Can't read frame {frame_idx} from {video_path}")
 
     height, total_width, _ = frame.shape
     one_view_width = total_width // 3
