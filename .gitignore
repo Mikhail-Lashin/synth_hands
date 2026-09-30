@@ -10,3 +10,4 @@ MANO_UV_left.obj
 MANO_UV_right.obj
 *.npz
 *.jpg
+*.pth
