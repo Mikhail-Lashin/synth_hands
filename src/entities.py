@@ -6,12 +6,37 @@ import random
 from pathlib import Path
 import smplx
 import json
+from scipy.spatial.transform import Rotation as R
 
 import carb
 import omni.replicator.core as rep
 import omni.usd
 
 from config import TEXTURE_PATH, NPZ_PATH, MANO_DIR
+
+R_HAND = np.array([                     # default hand rot (corrects hand pos in front of the camera)
+                [ 0.0, 0.0, 1.0],
+                [ 0.0, 1.0, 0.0],
+                [-1.0, 0.0, 0.0]
+            ], dtype=np.float32)
+
+# poor dependency: synchronisation required for render_triplets.py & build_dataset.py
+# TODO: add (R, t) saving in json, remove double seed randomisation
+def get_clip_transform(clip_idx: int) -> tuple:
+    """Deterministic pseudorandom hand rotation & translation for clip."""
+    rng = np.random.RandomState(seed=clip_idx)
+    
+    # rotation (deg)
+    pitch = rng.uniform(-10.0, 10.0)
+    yaw   = rng.uniform(-10.0, 10.0)
+    roll  = rng.uniform(-15.0, 15.0)
+    
+    R_rand = R.from_euler('xyz', [pitch, yaw, roll], degrees=True).as_matrix().astype(np.float32)
+    
+    # translation (m)
+    t_rand = rng.uniform(-0.025, 0.025, size=3).astype(np.float32)
+    
+    return R_rand @ R_HAND, t_rand
 
 class Hand:
     def __init__(self):
@@ -145,12 +170,8 @@ class Hand:
         if self.verts is None:
             raise ValueError("Verts arent initialised yet. Use load_obj() or upd_verts().")
 
-        if R is None:
-            R = np.array([
-                [ 0.0, 0.0, 1.0],
-                [ 0.0, 1.0, 0.0],
-                [-1.0, 0.0, 0.0]
-            ], dtype=np.float32)
+        if R is None: # corrective arm rotation if None
+            R = R_HAND
 
         assert np.isclose(np.linalg.det(R), 1.0, atol=1e-5), "Rotation matrix must have det = +1"
 
@@ -161,6 +182,29 @@ class Hand:
         if self.mesh is not None:
             self.mesh.GetPointsAttr().Set(Vt.Vec3fArray.FromNumpy(self.verts))
             self.mesh.GetExtentAttr().Set(self.mesh.ComputeExtent(self.mesh.GetPointsAttr().Get()))
+
+        return self.verts
+            
+    def transform_hand(self, R: np.ndarray | None = None, T: np.ndarray | None = None) -> np.ndarray:
+        """Apply transform to hand (used for randomisation)."""
+        if self.verts is None:
+            raise ValueError("Verts aren't initialised yet. Use load_obj() or upd_verts().")
+
+        if R is None:
+            R = R_HAND
+
+        assert np.isclose(np.linalg.det(R), 1.0, atol=1e-5), "Rotation matrix must have det = +1"
+
+        new_verts = self.verts @ R.T
+        if T is not None:
+            new_verts = new_verts + T
+
+        self.verts = np.ascontiguousarray(new_verts, dtype=np.float32)
+
+        if self.mesh is not None:
+            points_vt = Vt.Vec3fArray.FromNumpy(self.verts)
+            self.mesh.GetPointsAttr().Set(points_vt)
+            self.mesh.GetExtentAttr().Set(self.mesh.ComputeExtent(points_vt))
 
         return self.verts
     

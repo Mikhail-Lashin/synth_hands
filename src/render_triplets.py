@@ -28,7 +28,7 @@ simulation_app = SimulationApp({"headless": True, "renderer": "RealTimePathTraci
 import omni.usd
 
 import config as cfg
-from entities import Hand, StereoCamera, SceneManager
+from entities import Hand, StereoCamera, SceneManager, get_clip_transform
 
 
 def _colorize_depth(depth_meters: np.ndarray, min_dist: float = 0.05, max_dist: float = 0.6) -> np.ndarray:
@@ -61,9 +61,11 @@ def render_video(
     with tempfile.TemporaryDirectory() as tmp_dir:
         print(f"\n>>> Rendering clip {clip_idx:04d} ({num_frames} frames)...")
 
+
+        R_clip, t_clip = get_clip_transform(clip_idx)
         for frame_idx in range(num_frames):
             hand.upd_verts(clip_idx=clip_idx, frame_idx=frame_idx)
-            hand.rot_hand()
+            hand.transform_hand(R=R_clip, T=t_clip)
 
             simulation_app.update()
 
@@ -122,7 +124,8 @@ def main():
         simulation_app.update()
 
     # video render
-    for texture_idx, clip_idx in enumerate(range(704, 1177)):
+    # for texture_idx, clip_idx in enumerate(range(704, 1177)):
+    for texture_idx, clip_idx in enumerate(range(704, 714)):
         scene.set_backdrop_by_idx(texture_idx)
         scene.randomize_lighting()
         simulation_app.update()

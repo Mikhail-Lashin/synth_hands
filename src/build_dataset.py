@@ -19,6 +19,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 FFS_DIR = PROJECT_ROOT / "libs" / "Fast-FoundationStereo"
 sys.path.insert(0, str(FFS_DIR))
 
+from entities import get_clip_transform
 import core.foundation_stereo
 from core.utils.utils import InputPadder
 
@@ -148,6 +149,7 @@ def main(input_dir: Path,
         depth_clip = []
         joints_clip = []
 
+        R_clip, t_clip = get_clip_transform(clip_id)
         with torch.no_grad():
             for frame_idx in range(num_frames):
                 ret, frame = cap.read()
@@ -192,7 +194,7 @@ def main(input_dir: Path,
                 j16_world = output.joints[0].cpu().numpy()     # (16, 3)
                 verts_world = output.vertices[0].cpu().numpy() # (778, 3)
                 joints_world_21 = get_joints_21(j16_world, verts_world)
-                joints_world_21 = joints_world_21 @ R_HAND.T
+                joints_world_21 = (joints_world_21 @ R_clip.T) + t_clip # applying random transform as in triplets generation
 
                 # go to left cam optical frame (opencv: X-right, Y-down, Z-forward)
                 delta = joints_world_21 - cam_left_pos
