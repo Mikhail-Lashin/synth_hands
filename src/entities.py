@@ -211,25 +211,24 @@ class Hand:
 class StereoCamera:
     """
     Default - Intel RealSense D405:
-        ~ baseline - 18 mm
-        ~ color camera fov - H:84 / V:58 / D:92 (degrees)
+        ~ baseline - 18.2 mm
+        ~ focal_length - 2.0028 mm
         ~ sensor: OV9782
     """
     def __init__(
         self,
-        position: tuple = (0.0, -0.25, 0.0),
+        position: tuple = (0.0, -0.30, 0.0),
         look_at: tuple = (0.0, 0.0, 0.0),
         resolution: tuple = (848, 480),
-        baseline: float = 0.018,
-        focal_length: float | None = None,
-        h_fov: float = 84.0,
-        v_fov: float = 58.0,
+        baseline: float = 0.0182,
+        focal_length: float = 2.0030,
         sensor_width: float = 3.896,           # default for OV9782 (mm)
         sensor_height: float = 2.453,          # default for OV9782 (mm)
         clip_range: tuple = (0.05, 2.0)
     ):
         self.resolution = resolution
         self.baseline = baseline
+        self.focal_length = focal_length
         self.position = np.array(position, dtype=np.float32)
         self.look_at = np.array(look_at, dtype=np.float32)
         self.clip_range = clip_range
@@ -239,11 +238,6 @@ class StereoCamera:
         ratio_sensor = sensor_height / sensor_width
         self.horizontal_aperture = sensor_width if ratio_resolution <= ratio_sensor else sensor_height / ratio_resolution
         self.vertical_aperture = sensor_height if ratio_resolution >= ratio_sensor else sensor_width * ratio_resolution
-        
-        if focal_length is not None:
-            self.focal_length = focal_length
-        else:
-            self.focal_length = self.horizontal_aperture / (2.0 * np.tan(np.radians(h_fov / 2.0)))
         
         self.cam_left = None
         self.cam_right = None

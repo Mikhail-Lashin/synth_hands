@@ -125,7 +125,7 @@ def main():
 
     # video render
     # for texture_idx, clip_idx in enumerate(range(704, 1177)):
-    for texture_idx, clip_idx in enumerate(range(704, 714)):
+    for texture_idx, clip_idx in enumerate(range(704, 705)):
         scene.set_backdrop_by_idx(texture_idx)
         scene.randomize_lighting()
         simulation_app.update()
