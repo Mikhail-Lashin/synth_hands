@@ -28,7 +28,8 @@ simulation_app = SimulationApp({"headless": True, "renderer": "RealTimePathTraci
 import omni.usd
 
 import config as cfg
-from entities import NpzHand, StereoCamera, SceneManager, get_clip_transform
+from entities import NpzHand, StereoCamera, SceneManager
+from transforms import get_clip_transform
 
 
 def _colorize_depth(depth_meters: np.ndarray, min_dist: float = 0.05, max_dist: float = 0.6) -> np.ndarray:

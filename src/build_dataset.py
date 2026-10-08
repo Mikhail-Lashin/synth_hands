@@ -19,7 +19,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 FFS_DIR = PROJECT_ROOT / "libs" / "Fast-FoundationStereo"
 sys.path.insert(0, str(FFS_DIR))
 
-from entities import get_clip_transform
+from transforms import get_clip_transform
 import core.foundation_stereo
 from core.utils.utils import InputPadder
 
