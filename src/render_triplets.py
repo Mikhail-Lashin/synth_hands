@@ -28,7 +28,7 @@ simulation_app = SimulationApp({"headless": True, "renderer": "RealTimePathTraci
 import omni.usd
 
 import config as cfg
-from entities import Hand, StereoCamera, SceneManager, get_clip_transform
+from entities import NpzHand, StereoCamera, SceneManager, get_clip_transform
 
 
 def _colorize_depth(depth_meters: np.ndarray, min_dist: float = 0.05, max_dist: float = 0.6) -> np.ndarray:
@@ -57,41 +57,41 @@ def render_video(
 ):
     os.makedirs(output_dir, exist_ok=True)
     video_path = os.path.join(output_dir, f"clip_{clip_idx:04d}_stereo.mp4")
+    print(f"\n>>> Rendering clip {clip_idx:04d} ({num_frames} frames)...")
 
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        print(f"\n>>> Rendering clip {clip_idx:04d} ({num_frames} frames)...")
+    w, h = camera.resolution
+    cmd = [
+        "ffmpeg", "-y",
+        "-f", "rawvideo",
+        "-vcodec", "rawvideo",
+        "-s", f"{w*3}x{h}",
+        "-pix_fmt", "rgb24",
+        "-r", str(fps),
+        "-i", "-",
+        "-c:v", "libx264",
+        "-pix_fmt", "yuv420p",
+        video_path
+    ]
+    process = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.DEVNULL)
 
+    R_clip, t_clip = get_clip_transform(clip_idx)
+    for frame_idx in range(num_frames):
+        hand.upd_verts(clip_idx=clip_idx, frame_idx=frame_idx)
+        hand.transform_hand(R=R_clip, T=t_clip)
 
-        R_clip, t_clip = get_clip_transform(clip_idx)
-        for frame_idx in range(num_frames):
-            hand.upd_verts(clip_idx=clip_idx, frame_idx=frame_idx)
-            hand.transform_hand(R=R_clip, T=t_clip)
+        data = camera.render(num_subframes=num_subframes)
+        left_rgb = data["left_rgb"]
+        right_rgb = data["right_rgb"]
+        left_depth = data["left_depth"]
+        
+        depth_vis = _colorize_depth(left_depth, min_dist=depth_range[0], max_dist=depth_range[1])
+        combined_frame = np.hstack([left_rgb, right_rgb, depth_vis])
+        process.stdin.write(combined_frame.tobytes())
+        
+    process.stdin.close()
+    process.wait()
+    print(f">>> Video ready: {video_path}")
 
-            simulation_app.update()
-
-            data = camera.render(num_subframes=num_subframes)
-            left_rgb = data["left_rgb"]
-            right_rgb = data["right_rgb"]
-            left_depth = data["left_depth"]
-            
-            depth_vis = _colorize_depth(left_depth, min_dist=depth_range[0], max_dist=depth_range[1])
-            combined_frame = np.hstack([left_rgb, right_rgb, depth_vis])
-
-            frame_path = os.path.join(tmp_dir, f"frame_{frame_idx:04d}.png")
-            Image.fromarray(combined_frame).save(frame_path)
-
-        # build video
-        cmd = [
-            "ffmpeg", "-y",
-            "-framerate", str(fps),
-            "-i", os.path.join(tmp_dir, "frame_%04d.png"),
-            "-c:v", "libx264",
-            "-pix_fmt", "yuv420p",
-            video_path
-        ]
-        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, check=True)
-
-    print(f">>> Видео готово: {video_path}")
 
 def main():
     obj_path = os.path.abspath(cfg.OBJ_PATH)
@@ -102,7 +102,7 @@ def main():
 
     # hand
     stage = omni.usd.get_context().get_stage()
-    hand = Hand()
+    hand = NpzHand()
     hand.load_obj(obj_path)
     hand.rot_hand()
     hand.create_usd_mesh(stage)
@@ -124,8 +124,7 @@ def main():
         simulation_app.update()
 
     # video render
-    # for texture_idx, clip_idx in enumerate(range(704, 1177)):
-    for texture_idx, clip_idx in enumerate(range(704, 705)):
+    for texture_idx, clip_idx in enumerate(range(976, 1177)): # handx: 704 - 1177
         scene.set_backdrop_by_idx(texture_idx)
         scene.randomize_lighting()
         simulation_app.update()

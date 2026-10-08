@@ -125,6 +125,7 @@ class Hand:
         # Catmull-Clark subdivision (generates smooth limit normals without breaking UV seams)
         mesh_prim.CreateSubdivisionSchemeAttr(UsdGeom.Tokens.catmullClark)
         mesh_prim.CreateInterpolateBoundaryAttr(UsdGeom.Tokens.edgeAndCorner)
+        
         mesh_prim.CreateDoubleSidedAttr(True)
     
         # bind PBR material
@@ -132,40 +133,7 @@ class Hand:
         UsdShade.MaterialBindingAPI.Apply(mesh_prim.GetPrim()).Bind(self.material)
         
         self.mesh = mesh_prim
-        
-    def upd_verts(self, npz_path=NPZ_PATH, clip_idx=0, frame_idx=0, hand_type="right"):
-        data = np.load(npz_path, allow_pickle=True)
-        
-        clip = data[str(clip_idx)].item()
-        pose_frame = torch.tensor(clip[hand_type + "_pose"][frame_idx : frame_idx + 1], dtype=torch.float32)   # (1, 48)
-        shape_frame = torch.tensor(clip[hand_type + "_shape"][frame_idx : frame_idx + 1], dtype=torch.float32) # (1, 10)
-        
-        model_type = "MANO_RIGHT.pkl" if hand_type == "right" else "MANO_LEFT.pkl"
-        mano_layer = smplx.create(
-            model_path=str(MANO_DIR),
-            model_type=model_type,
-            is_rhand=True if hand_type == "right" else False,
-            use_pca=False,
-            flat_hand_mean=False
-        )
-
-        output = mano_layer(
-            hand_pose=pose_frame[:, 3:],
-            betas=shape_frame,
-        )
-
-        new_verts = output.vertices[0].detach().cpu().numpy()
-        
-        # update attr
-        self.verts = new_verts
-        
-        # update mesh
-        if self.mesh is not None:
-            self.mesh.GetPointsAttr().Set(Vt.Vec3fArray.FromNumpy(self.verts))
-            self.mesh.GetExtentAttr().Set(self.mesh.ComputeExtent(self.mesh.GetPointsAttr().Get()))
-        
-        return new_verts
-    
+            
     def rot_hand(self, R: np.ndarray | None = None) -> np.ndarray:
         if self.verts is None:
             raise ValueError("Verts arent initialised yet. Use load_obj() or upd_verts().")
@@ -207,6 +175,42 @@ class Hand:
             self.mesh.GetExtentAttr().Set(self.mesh.ComputeExtent(points_vt))
 
         return self.verts
+
+class NpzHand(Hand):
+    def __init__(self, npz_path=NPZ_PATH, mano_dir=MANO_DIR, hand_type="right"):
+        Hand.__init__(self)
+        self.data = np.load(npz_path, allow_pickle=True)
+        self.mano_layer = smplx.create(
+            model_path=str(mano_dir),
+            model_type="MANO_RIGHT.pkl" if hand_type == "right" else "MANO_LEFT.pkl",
+            is_rhand=(hand_type == "right"),
+            use_pca=False,
+            flat_hand_mean=False,
+            num_betas=10
+        )
+        self.hand_type = hand_type
+        
+        
+    def upd_verts(self, clip_idx=0, frame_idx=0):        
+        clip = self.data[str(clip_idx)].item()
+        pose_frame = torch.tensor(clip[self.hand_type + "_pose"][frame_idx : frame_idx + 1], dtype=torch.float32)   # (1, 48)
+        shape_frame = torch.tensor(clip[self.hand_type + "_shape"][frame_idx : frame_idx + 1], dtype=torch.float32) # (1, 10)
+        output = self.mano_layer(
+            hand_pose=pose_frame[:, 3:],
+            betas=shape_frame,
+        )
+
+        # update verts
+        new_verts = output.vertices[0].detach().cpu().numpy()
+        self.verts = new_verts
+        
+        # update mesh
+        if self.mesh is not None:
+            self.mesh.GetPointsAttr().Set(Vt.Vec3fArray.FromNumpy(self.verts))
+            self.mesh.GetExtentAttr().Set(self.mesh.ComputeExtent(self.mesh.GetPointsAttr().Get()))
+        
+        return new_verts
+        
     
 class StereoCamera:
     """
