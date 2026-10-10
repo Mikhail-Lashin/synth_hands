@@ -188,7 +188,6 @@ class NpzHand(Hand):
         
         return new_verts
         
-    
 class StereoCamera:
     """
     Default - Intel RealSense D405:
