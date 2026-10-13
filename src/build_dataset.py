@@ -35,34 +35,65 @@ def get_clip_id(filename: str) -> int:
 def get_joints_21(joints_16: np.ndarray, verts_778: np.ndarray) -> np.ndarray:
     """
     16 MANO joints + 5 additional tip joints -> 21 joints
-    (similar to HaMeR)
+    Supports both single frame (2D) and batched (3D) inputs.
     """
-    tips = verts_778[MANO_TIPS_VERT_INDICES]  # (5, 3)
+    if joints_16.ndim == 2:
+        tips = verts_778[MANO_TIPS_VERT_INDICES]  # (5, 3)
 
-    joints_21 = np.zeros((21, 3), dtype=np.float32)
-    
+        joints_21 = np.zeros((21, 3), dtype=np.float32)
+        
+        # WRIST
+        joints_21[0] = joints_16[0]
+
+        # THUMB
+        joints_21[1:4] = joints_16[13:16] 
+        joints_21[4] = tips[0]
+
+        # INDEX
+        joints_21[5:8] = joints_16[1:4]
+        joints_21[8] = tips[1]
+
+        # MIDDLE
+        joints_21[9:12] = joints_16[4:7]
+        joints_21[12] = tips[2]
+
+        # RING
+        joints_21[13:16] = joints_16[10:13]
+        joints_21[16] = tips[3]
+
+        # PINKY
+        joints_21[17:20] = joints_16[7:10]
+        joints_21[20] = tips[4]
+
+        return joints_21
+
+    tips = verts_778[:, MANO_TIPS_VERT_INDICES]  # (B, 5, 3)
+    B = joints_16.shape[0]
+
+    joints_21 = np.zeros((B, 21, 3), dtype=np.float32)
+
     # WRIST
-    joints_21[0] = joints_16[0]
+    joints_21[:, 0] = joints_16[:, 0]
 
     # THUMB
-    joints_21[1:4] = joints_16[13:16] 
-    joints_21[4] = tips[0]
+    joints_21[:, 1:4] = joints_16[:, 13:16]
+    joints_21[:, 4] = tips[:, 0]
 
     # INDEX
-    joints_21[5:8] = joints_16[1:4]
-    joints_21[8] = tips[1]
+    joints_21[:, 5:8] = joints_16[:, 1:4]
+    joints_21[:, 8] = tips[:, 1]
 
     # MIDDLE
-    joints_21[9:12] = joints_16[4:7]
-    joints_21[12] = tips[2]
+    joints_21[:, 9:12] = joints_16[:, 4:7]
+    joints_21[:, 12] = tips[:, 2]
 
     # RING
-    joints_21[13:16] = joints_16[10:13]
-    joints_21[16] = tips[3]
+    joints_21[:, 13:16] = joints_16[:, 10:13]
+    joints_21[:, 16] = tips[:, 3]
 
     # PINKY
-    joints_21[17:20] = joints_16[7:10]
-    joints_21[20] = tips[4]
+    joints_21[:, 17:20] = joints_16[:, 7:10]
+    joints_21[:, 20] = tips[:, 4]
 
     return joints_21
 
@@ -144,6 +175,29 @@ def main(input_dir: Path,
         bbox_clip = []
 
         R_clip, t_clip = get_clip_transform(clip_id)
+
+        # batched MANO computation for all frames at once
+        with torch.no_grad():
+            global_orient_all = torch.zeros((num_frames, 3), dtype=torch.float32, device=device)
+            shapes_batch = shapes_all[:num_frames] if shapes_all.shape[0] >= num_frames else shapes_all.expand(num_frames, -1)
+
+            output_all = mano_layer(
+                global_orient=global_orient_all,
+                hand_pose=poses_all[:num_frames, 3:],
+                betas=shapes_batch
+            )
+            j16_world_all = output_all.joints.cpu().numpy()
+            verts_world_all = output_all.vertices.cpu().numpy()
+            joints_21_all = get_joints_21(j16_world_all, verts_world_all)
+            joints_world_21_all = (joints_21_all @ R_clip.T) + t_clip
+
+            delta_all = joints_world_21_all - cam_left_pos
+            joints_cam_all = np.zeros_like(delta_all)
+            joints_cam_all[:, :, 0] = delta_all[:, :, 0]
+            joints_cam_all[:, :, 1] = -delta_all[:, :, 2]
+            joints_cam_all[:, :, 2] = delta_all[:, :, 1]
+            joints_cam_all = joints_cam_all.astype(np.float32)
+
         with torch.no_grad():
             for frame_idx in range(num_frames):
                 ret, frame = cap.read()
@@ -180,27 +234,11 @@ def main(input_dir: Path,
                 depth_meters = (fx * baseline) / disp
                 depth_meters = np.clip(depth_meters, clip_range[0], clip_range[1]).astype(np.float16)
                 depth_clip.append(depth_meters)
+
+                joints_cam = joints_cam_all[frame_idx]
+                joints_clip.append(joints_cam)
                 
-                # compute 21 joints
-                pose_f = poses_all[frame_idx : frame_idx + 1]
-                shape_f = shapes_all[frame_idx : frame_idx + 1]
-
-                output = mano_layer(hand_pose=pose_f[:, 3:], betas=shape_f)
-                j16_world = output.joints[0].cpu().numpy()     # (16, 3)
-                verts_world = output.vertices[0].cpu().numpy() # (778, 3)
-                joints_world_21 = get_joints_21(j16_world, verts_world)
-                joints_world_21 = (joints_world_21 @ R_clip.T) + t_clip # applying random transform as in triplets generation
-
-                # go to left cam optical frame (opencv: X-right, Y-down, Z-forward)
-                delta = joints_world_21 - cam_left_pos
-                joints_cam = np.zeros_like(delta)
-                joints_cam[:, 0] = delta[:, 0]
-                joints_cam[:, 1] = -delta[:, 2]
-                joints_cam[:, 2] = delta[:, 1]
-
-                joints_clip.append(joints_cam.astype(np.float32))
-                
-                #compute square bbox
+                # compute square bbox
                 u_pix = (fx * joints_cam[:, 0] / joints_cam[:, 2]) + (single_width / 2.0)
                 v_pix = (fx * joints_cam[:, 1] / joints_cam[:, 2]) + (height / 2.0)
 
@@ -212,13 +250,12 @@ def main(input_dir: Path,
                 box_size = max(u_max - u_min, v_max - v_min)
 
                 bbox_clip.append(np.array([cx_box, cy_box, box_size], dtype=np.float32))
-                
 
         cap.release()
 
         depth_array = np.stack(depth_clip, axis=0)    # (60, H, W), float16
         joints_array = np.stack(joints_clip, axis=0)  # (60, 21, 3), float32
-        bbox_array = np.stack(bbox_clip, axis=0)      # (60, 3), int32
+        bbox_array = np.stack(bbox_clip, axis=0)      # (60, 3), float32
 
         np.savez(save_path, depth=depth_array, joints_3d=joints_array, bbox=bbox_array)
         print(f">>> Done: {save_path.name} | Depth: {depth_array.shape} | Joints: {joints_array.shape} | BBox: {bbox_array.shape}")
