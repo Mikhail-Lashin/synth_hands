@@ -20,7 +20,9 @@ FINGER_COLORS = [
 ]
 
 def project_3d_to_pixel(joints_cam: np.ndarray, width: int, height: int, h_fov: float = 84.0) -> np.ndarray:
-    fx = width / (2.0 * np.tan(np.radians(h_fov / 2.0)))
+    # fx = width / (2.0 * np.tan(np.radians(h_fov / 2.0)))
+    # TODO: replace h_fov, add focal_length (m) and compute fx using focal_length & resolution
+    fx = 435.97 # correct only for (848x480)
     fy = fx
     cx = width / 2.0
     cy = height / 2.0
@@ -39,9 +41,10 @@ def project_3d_to_pixel(joints_cam: np.ndarray, width: int, height: int, h_fov: 
 def main(npz_path: Path,
          frame_idx: int = 0,
          output_image: Path = Path("renders/debug_joint_overlay.png"),
-         h_fov: float = 84.0, # default for RealSense D405
+         h_fov: float = 84.0, # default for RealSense D405 (approximately, needs fix)
          min_depth: float = 0.05,
-         max_depth: float = 0.60
+         max_depth: float = 0.60,
+         bbox_padding: float = 1.30,
 ):
     
     if not npz_path.exists():
@@ -50,12 +53,14 @@ def main(npz_path: Path,
     data = np.load(npz_path)
     depths = data["depth"].astype(np.float32)
     joints_3d = data["joints_3d"]  # (60, 21, 3)
+    bboxes = data["bbox"]
 
     num_frames = depths.shape[0]
     frame_idx = max(0, min(frame_idx, num_frames - 1))
 
     depth_map = depths[frame_idx]
     joints_frame = joints_3d[frame_idx]
+    bbox = bboxes[frame_idx]
 
     H, W = depth_map.shape
 
@@ -96,6 +101,20 @@ def main(npz_path: Path,
 
             cv2.circle(canvas, p, radius=radius+1, color=(0, 0, 0), thickness=-1, lineType=cv2.LINE_AA)
             cv2.circle(canvas, p, radius=radius, color=color, thickness=-1, lineType=cv2.LINE_AA)
+            
+    # bbox rendering
+    cx_box, cy_box, box_size = bbox
+    box_size *= bbox_padding
+    x1 = cx_box - box_size / 2
+    y1 = cy_box - box_size / 2
+    x2 = cx_box + box_size / 2
+    y2 = cy_box + box_size / 2
+    cv2.rectangle(canvas,
+                  (int(x1), int(y1)),
+                  (int(x2), int(y2)),
+                  (0, 255, 0),
+                  thickness=2)
+                  
 
     # text metadata
     z_min, z_max = joints_frame[:, 2].min(), joints_frame[:, 2].max()

@@ -24,13 +24,6 @@ import core.foundation_stereo
 from core.utils.utils import InputPadder
 
 MANO_TIPS_VERT_INDICES = [744, 320, 443, 555, 672]
-
-R_HAND = np.array([
-        [ 0.0, 0.0, 1.0],
-        [ 0.0, 1.0, 0.0],
-        [-1.0, 0.0, 0.0]
-    ], dtype=np.float32)
-
 MIN_DISP = 0.1
 
 def get_clip_id(filename: str) -> int:
@@ -148,6 +141,7 @@ def main(input_dir: Path,
 
         depth_clip = []
         joints_clip = []
+        bbox_clip = []
 
         R_clip, t_clip = get_clip_transform(clip_id)
         with torch.no_grad():
@@ -156,6 +150,7 @@ def main(input_dir: Path,
                 if not ret:
                     break
 
+                # compute depth
                 height, total_width, _ = frame.shape
                 single_width = total_width // 3
 
@@ -185,7 +180,7 @@ def main(input_dir: Path,
                 depth_meters = (fx * baseline) / disp
                 depth_meters = np.clip(depth_meters, clip_range[0], clip_range[1]).astype(np.float16)
                 depth_clip.append(depth_meters)
-
+                
                 # compute 21 joints
                 pose_f = poses_all[frame_idx : frame_idx + 1]
                 shape_f = shapes_all[frame_idx : frame_idx + 1]
@@ -204,14 +199,29 @@ def main(input_dir: Path,
                 joints_cam[:, 2] = delta[:, 1]
 
                 joints_clip.append(joints_cam.astype(np.float32))
+                
+                #compute square bbox
+                u_pix = (fx * joints_cam[:, 0] / joints_cam[:, 2]) + (single_width / 2.0)
+                v_pix = (fx * joints_cam[:, 1] / joints_cam[:, 2]) + (height / 2.0)
+
+                u_min, u_max = u_pix.min(), u_pix.max()
+                v_min, v_max = v_pix.min(), v_pix.max()
+
+                cx_box = (u_min + u_max) / 2.0
+                cy_box = (v_min + v_max) / 2.0
+                box_size = max(u_max - u_min, v_max - v_min)
+
+                bbox_clip.append(np.array([cx_box, cy_box, box_size], dtype=np.float32))
+                
 
         cap.release()
 
         depth_array = np.stack(depth_clip, axis=0)    # (60, H, W), float16
         joints_array = np.stack(joints_clip, axis=0)  # (60, 21, 3), float32
+        bbox_array = np.stack(bbox_clip, axis=0)      # (60, 3), int32
 
-        np.savez_compressed(save_path, depth=depth_array, joints_3d=joints_array)
-        print(f">>> Done: {save_path.name} | Depth: {depth_array.shape} | Joints: {joints_array.shape}")
+        np.savez(save_path, depth=depth_array, joints_3d=joints_array, bbox=bbox_array)
+        print(f">>> Done: {save_path.name} | Depth: {depth_array.shape} | Joints: {joints_array.shape} | BBox: {bbox_array.shape}")
 
 
 if __name__ == "__main__":
