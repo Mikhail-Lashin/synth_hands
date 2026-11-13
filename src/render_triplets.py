@@ -1,17 +1,8 @@
-import os
-import sys
 import inspect
-from PIL import Image
+import os
 import subprocess
-import tempfile
-from PIL import Image
+import sys
 import numpy as np
-
-try:
-    import cv2
-    HAS_CV2 = True
-except ImportError:
-    HAS_CV2 = False
 
 # compatibility patches for python 3.12
 if not hasattr(inspect, "getargspec"):
@@ -30,19 +21,10 @@ import omni.usd
 import config as cfg
 from entities import NpzHand, StereoCamera, SceneManager
 from transforms import get_clip_transform
-
-
-def _colorize_depth(depth_meters: np.ndarray, min_dist: float = 0.05, max_dist: float = 0.6) -> np.ndarray:
-    clean_depth = np.nan_to_num(depth_meters, nan=max_dist, posinf=max_dist, neginf=min_dist)
-
-    depth_norm = np.clip((clean_depth - min_dist) / (max_dist - min_dist), 0.0, 1.0)
-    depth_uint8 = (depth_norm * 255.0).astype(np.uint8)
-
-    if HAS_CV2:
-        depth_color = cv2.applyColorMap(depth_uint8, cv2.COLORMAP_TURBO)
-        return cv2.cvtColor(depth_color, cv2.COLOR_BGR2RGB)
-    else:
-        return np.repeat(depth_uint8[:, :, np.newaxis], 3, axis=-1)
+try:
+    from src.utils.visualisation import colorize_depth
+except ImportError:
+    from utils.visualisation import colorize_depth
 
 
 def render_video(
@@ -50,8 +32,8 @@ def render_video(
     hand,
     camera,
     simulation_app,
-    num_frames: int = 60,
-    fps: int = 30,
+    num_frames: int = 120,
+    fps: int = 60,
     output_dir: str = cfg.OUTPUT_DIR,
     num_subframes: int = cfg.RENDER_SUBFRAMES,
     depth_range: tuple = (0.05, 0.6)
@@ -85,7 +67,7 @@ def render_video(
         right_rgb = data["right_rgb"]
         left_depth = data["left_depth"]
         
-        depth_vis = _colorize_depth(left_depth, min_dist=depth_range[0], max_dist=depth_range[1])
+        depth_vis = colorize_depth(left_depth, min_dist=depth_range[0], max_dist=depth_range[1], rgb=True)
         combined_frame = np.hstack([left_rgb, right_rgb, depth_vis])
         process.stdin.write(combined_frame.tobytes())
         
@@ -125,7 +107,7 @@ def main():
         simulation_app.update()
 
     # video render
-    for texture_idx, clip_idx in enumerate(range(976, 1177)): # handx: 704 - 1177
+    for texture_idx, clip_idx in enumerate(range(23, 597)): # handx: 704 - 1177
         scene.set_backdrop_by_idx(texture_idx)
         scene.randomize_lighting()
         simulation_app.update()
@@ -135,8 +117,8 @@ def main():
             hand=hand,
             camera=camera,
             simulation_app=simulation_app,
-            num_frames=60,
-            fps=30
+            num_frames=120,
+            fps=60
         )
 
 if __name__ == "__main__":

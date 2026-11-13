@@ -1,7 +1,10 @@
 .vscode
 __pycache__/
 renders/
+datasets/
 handx/
+cache/
+custom_clips/
 *.log
 *.bag
 *.bvh

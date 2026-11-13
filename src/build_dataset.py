@@ -107,7 +107,7 @@ def load_model(weights_path: Path, valid_iters: int, max_disp: int, device: str)
 
 def main(input_dir: Path,
          output_dir: Path,
-         ground_truth_path: Path = Path("handx/train_mano.npz"),
+         ground_truth_path: Path,
          mano_models_dir: Path = Path("assets/mano/originals"),
          weights_path: Path = Path("libs/Fast-FoundationStereo/weights/20-30-48/model_best_bp2_serialize.pth"),
 
@@ -123,7 +123,7 @@ def main(input_dir: Path,
         model_type="MANO_RIGHT.pkl",
         is_rhand=True,
         use_pca=False,
-        flat_hand_mean=False
+        flat_hand_mean=True
     ).to(device)
 
     ffs_model = load_model(weights_path,

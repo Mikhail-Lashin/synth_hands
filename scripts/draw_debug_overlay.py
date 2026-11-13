@@ -1,42 +1,16 @@
+import sys
 from pathlib import Path
+
 import cv2
 import numpy as np
 import tyro
 
-MANO_21_BONES = [
-    (0, 1), (1, 2), (2, 3), (3, 4),         # THUMB
-    (0, 5), (5, 6), (6, 7), (7, 8),         # INDEX
-    (0, 9), (9, 10), (10, 11), (11, 12),    # MIDDLE
-    (0, 13), (13, 14), (14, 15), (15, 16),  # RING
-    (0, 17), (17, 18), (18, 19), (19, 20)   # PINKY
-]
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
-FINGER_COLORS = [
-    (0, 255, 255),  # THUMB
-    (0, 255, 0),    # INDEX
-    (255, 255, 0),  # MIDDLE
-    (255, 0, 0),    # RING
-    (255, 0, 255),  # PINKY
-]
+from src.utils.visualisation import colorize_depth, draw_skeleton, project_3d_to_pixel
 
-def project_3d_to_pixel(joints_cam: np.ndarray, width: int, height: int, h_fov: float = 84.0) -> np.ndarray:
-    # fx = width / (2.0 * np.tan(np.radians(h_fov / 2.0)))
-    # TODO: replace h_fov, add focal_length (m) and compute fx using focal_length & resolution
-    fx = 435.97 # correct only for (848x480)
-    fy = fx
-    cx = width / 2.0
-    cy = height / 2.0
-
-    X = joints_cam[:, 0]
-    Y = joints_cam[:, 1]
-    Z = joints_cam[:, 2]
-
-    Z_safe = np.maximum(Z, 1e-4)
-
-    u = (fx * X / Z_safe) + cx
-    v = (fy * Y / Z_safe) + cy
-
-    return np.stack([u, v], axis=-1)
 
 def main(npz_path: Path,
          frame_idx: int = 0,
@@ -65,42 +39,16 @@ def main(npz_path: Path,
     H, W = depth_map.shape
 
     # depth map in turbo
-    clean_depth = np.nan_to_num(depth_map, nan=max_depth, posinf=max_depth, neginf=min_depth)
-    depth_norm = np.clip((clean_depth - min_depth) / (max_depth - min_depth), 0.0, 1.0)
-    depth_uint8 = (depth_norm * 255.0).astype(np.uint8)
-    canvas = cv2.applyColorMap(depth_uint8, cv2.COLORMAP_TURBO)
+    canvas = colorize_depth(depth_map, min_dist=min_depth, max_dist=max_depth)
 
     # joints projection
-    joints_2d = project_3d_to_pixel(joints_frame, width=W, height=H, h_fov=h_fov)
+    # fx = width / (2.0 * np.tan(np.radians(h_fov / 2.0)))
+    # TODO: replace h_fov, add focal_length (m) and compute fx using focal_length & resolution
+    fx = 435.97  # correct only for (848x480)
+    joints_2d = project_3d_to_pixel(joints_frame, width=W, height=H, fx=fx)
 
-    # bones rendering
-    for bone_idx, (j1, j2) in enumerate(MANO_21_BONES):
-        finger_id = bone_idx // 4  # 4 segments for 1 finger
-        color = FINGER_COLORS[finger_id]
-        
-        pt1 = tuple(np.round(joints_2d[j1]).astype(int))
-        pt2 = tuple(np.round(joints_2d[j2]).astype(int))
-
-        if 0 <= pt1[0] < W and 0 <= pt1[1] < H and 0 <= pt2[0] < W and 0 <= pt2[1] < H:
-            cv2.line(canvas, pt1, pt2, color, thickness=2, lineType=cv2.LINE_AA)
-
-    # joints rendering
-    tip_indices = {4, 8, 12, 16, 20}
-    for idx, pt in enumerate(joints_2d):
-        p = tuple(np.round(pt).astype(int))
-        if 0 <= p[0] < W and 0 <= p[1] < H:
-            if idx == 0:
-                color = (255, 255, 255)
-                radius = 5
-            elif idx in tip_indices:
-                color = (0, 255, 0)
-                radius = 4
-            else:
-                color = (0, 0, 255)
-                radius = 3
-
-            cv2.circle(canvas, p, radius=radius+1, color=(0, 0, 0), thickness=-1, lineType=cv2.LINE_AA)
-            cv2.circle(canvas, p, radius=radius, color=color, thickness=-1, lineType=cv2.LINE_AA)
+    # skeleton rendering
+    draw_skeleton(canvas, joints_2d)
             
     # bbox rendering
     cx_box, cy_box, box_size = bbox

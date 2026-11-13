@@ -162,7 +162,7 @@ class NpzHand(Hand):
             model_type="MANO_RIGHT.pkl" if hand_type == "right" else "MANO_LEFT.pkl",
             is_rhand=(hand_type == "right"),
             use_pca=False,
-            flat_hand_mean=False,
+            flat_hand_mean=True,
             num_betas=10
         )
         self.hand_type = hand_type
